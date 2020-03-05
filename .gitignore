@@ -4,3 +4,8 @@ __pycache__
 build
 .vscode/
 **/.*.swp
+
+# Dependency Graphics
+*.gv
+*.pdf
+*.svg
