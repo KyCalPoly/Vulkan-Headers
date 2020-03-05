@@ -12,7 +12,7 @@ argParser = ArgumentParser()
 def main(args):
     vkDefs = gatherDefs()
     handleDependencies = traceHandleDependencies(vkDefs)
-    dot = Digraph("Level 1 Handle Dependencies", engine='dot')
+    dot = Digraph("Recursive Handle Dependencies", engine='dot')
 
     for handle, deps in handleDependencies.items():
         dot.node(handle,handle)
@@ -157,27 +157,34 @@ def gatherDefs():
 
 def expandInputs(initialInputs:list, vkDefs:dict, recursionLevel=0, parentIsOptional=False):
     inputs = []
+    deepestR = 0
     for i in initialInputs:
         if(i.typename in vkDefs['createInfos']):
             stype = vkDefs['createInfos'][i.typename]
-            inputs += expandInputs(stype.members, vkDefs, recursionLevel+1, i.isOptional() or parentIsOptional)
+            subinputs, deepestSubR = expandInputs(stype.members, vkDefs, recursionLevel+1, i.isOptional() or parentIsOptional)
+            inputs += subinputs
+            deepestR = max(deepestR, deepestSubR)
         elif(i.typename in vkDefs['handles'] and (recursionLevel > 0 or not i.isNonConstPtr())): # Ignore pointer qualifications if this is a member of some createInfo struct we've recursed into. 
             inputs.append((i.typename, i.isOptional() or parentIsOptional))
-    return(inputs)
+    deepestR = max(deepestR, recursionLevel)
+    return(inputs, deepestR)
 
 def traceHandleDependencies(vkDefs):
     handleDependencies = {}
     for h, deps in vkDefs['handles'].items():
         handleDependencies[h] = set([(d, False) for d in deps])
 
+    deepestOfAll = 0
     for _, func in vkDefs['commands'].items():
-        inputs = expandInputs(func.params, vkDefs)
+        inputs, deepestR = expandInputs(func.params, vkDefs)
+        # print(f"Deepest recursive handle dependency for function '{func.name}' was {deepestR} recursions deep")
+        deepestOfAll = max(deepestOfAll, deepestR)
         outputs = filter(lambda x: x.isNonConstPtr(), func.params)
         for o in outputs:
             if o.typename in handleDependencies:
                 for i in inputs:
                     handleDependencies[o.typename].add(i)
-
+    # print(f"Deepest recursion of all was {deepestOfAll} recursions deep")
     return(handleDependencies)
             
 
